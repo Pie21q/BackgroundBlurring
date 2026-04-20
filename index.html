@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Picture Background Blurring</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/stackblur-canvas@2.7.0/dist/stackblur.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0e0f;
+    --surface: #161618;
+    --surface2: #1e1e21;
+    --border: #2a2a2e;
+    --border2: #3a3a3f;
+    --text: #e8e8ea;
+    --muted: #7a7a82;
+    --accent: #ff82e2;
+    --accent-dim: #9d4c8a;
+    --danger: #ff5f5f;
+    --warn: #ffa940;
+    --success: #f572d9;
+    --mono: 'DM Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+    --radius: 10px;
+    --radius-lg: 16px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 40px 24px 80px;
+  }
+
+  header {
+    max-width: 900px;
+    margin: 0 auto 40px;
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+  }
+
+  header h1 {
+    font-size: 22px;
+    font-weight: 500;
+    letter-spacing: -0.3px;
+  }
+
+  header .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    background: #c8f06015;
+    border: 1px solid #c8f06030;
+    border-radius: 4px;
+    padding: 2px 8px;
+    letter-spacing: 0.05em;
+  }
+ 
+  .main {
+    max-width: 900px;
+    margin: 0 auto;
+    display: grid;
+    gap: 16px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+  }
+
+  .card-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-title .num {
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  /* Model loader */
+  .file-drop {
+    border: 1.5px dashed var(--border2);
+    border-radius: var(--radius);
+    padding: 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    position: relative;
+  }
+
+  .file-drop:hover, .file-drop.over {
+    border-color: var(--accent-dim);
+    background: #c8f0600a;
+  }
+
+  .file-drop input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+
+  .file-drop .drop-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+  }
+
+  .file-drop p {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  .file-drop strong {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  /* Status pill */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid;
+  }
+
+  .pill.wait  { color: var(--muted);   border-color: var(--border2); background: var(--surface2); }
+  .pill.ok    { color: var(--success); border-color: #4dffb030;     background: #1eff9a10 ;margin-top: 1%; }
+  .pill.error { color: var(--danger);  border-color: #ff5f5f30;     background: #ff5f5f10; }
+  .pill.busy  { color: var(--warn);    border-color: #ffa94030;     background: #ffa94010; }
+
+  .pill .dot {
+    width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0;
+  }
+
+  .pill.busy .dot { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 18px;
+    font-size: 13px;
+    font-family: var(--sans);
+    font-weight: 500;
+    border-radius: var(--radius);
+    border: 1px solid var(--border2);
+    background: var(--surface2);
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, transform 0.1s;
+  }
+
+  .btn:hover:not(:disabled) { background: #2a2a2e; border-color: #4a4a52; }
+  .btn:active:not(:disabled) { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .btn-accent {
+    background: var(--accent);
+    color: #0e0e0f;
+    border-color: var(--accent);
+    font-weight: 500;
+  }
+
+  .btn-accent:hover:not(:disabled) { background: #9d4c8a; border-color: #9d4c8a; }
+
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+  /* Canvas grid */
+  .canvases {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+
+  @media (max-width: 640px) {
+    .canvases { grid-template-columns: 1fr; }
+  }
+
+  .canvas-wrap { display: flex; flex-direction: column; gap: 6px; }
+
+  .canvas-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+  }
+
+  canvas {
+    width: 100%;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    display: block;
+    background: var(--surface2);
+    min-height: 80px;
+  }
+
+  /* Sliders */
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .slider-row label {
+    font-size: 13px;
+    color: var(--muted);
+    min-width: 130px;
+  }
+
+  .slider-row input[type=range] {
+    flex: 1;
+    accent-color: var(--accent);
+    height: 4px;
+  }
+
+  .slider-val {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    min-width: 28px;
+    text-align: right;
+  }
+
+  /* Debug panel */
+  .debug-panel {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+
+  .debug-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    margin-bottom: 12px;
+    letter-spacing: 0.08em;
+  }
+
+  .debug-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .debug-stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+
+  .debug-stat .stat-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+  }
+
+  .debug-stat .stat-val {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  .debug-log {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.7;
+    white-space: pre-wrap;
+    max-height: 160px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    background: var(--surface);
+  }
+
+  .debug-log .ok   { color: var(--success); }
+  .debug-log .warn { color: var(--warn); }
+  .debug-log .err  { color: var(--danger); }
+
+  .sep { height: 1px; background: var(--border); margin: 16px 0; }
+
+  details > summary {
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  details > summary::before {
+    content: '▶';
+    font-size: 9px;
+    transition: transform 0.15s;
+  }
+
+  details[open] > summary::before { transform: rotate(90deg); }
+  details[open] > summary { margin-bottom: 16px; color: var(--text); }
+
+  .legend {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .legend-swatch {
+    width: 14px; height: 14px;
+    border-radius: 3px;
+    border: 1px solid var(--border2);
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Background Blurring</h1>
+    <span class="tag">Powered by TensorFlowJS</span>
+  </div>
+  <a href = https://github.com/Pie21q style= "margin-left:auto;"><img src="https://github.com/Pie21q.png" width="52" style="border-radius: 50%;"></a>
+</header>
+
+<div class="main">
+
+  <!-- Model loads automatically -->
+
+
+  <div class="card">
+    <div class="card-title"><span class="num">01</span> MODEL</div>
+    <span>Background blurring of pictures based on a Trimap generated by a Convolutional Neural Network <br></span>
+    <span id="model-pill" class="pill wait"><span class="dot"></span>loading…</span>
+  </div>
+
+  <!-- STEP 2: Image -->
+  <div class="card">
+    <div class="card-title"><span class="num">02</span> UPLOAD IMAGE</div>
+    <div class="file-drop" id="img-drop">
+      <input type="file" id="img-input" accept="image/png,image/jpeg,image/webp">
+      <div class="drop-icon">◻</div>
+      <strong>Drop your photo here</strong>
+      <p>PNG, JPG, WebP</p>
+    </div>
+  </div>
+
+  <!-- STEP 3: Predict -->
+  <div class="card">
+    <div class="card-title"><span class="num">03</span> PREDICT TRIMAP</div>
+    <div class="row" style="margin-bottom:16px;">
+      <button class="btn btn-accent" id="btn-predict" onclick="runPrediction()" disabled>Run prediction</button>
+      <span id="pred-pill" class="pill wait"><span class="dot"></span>waiting</span>
+    </div>
+    <div class="canvases">
+      <div class="canvas-wrap">
+        <span class="canvas-label">INPUT</span>
+        <canvas id="c-input"></canvas>
+      </div>
+      <div class="canvas-wrap">
+        <span class="canvas-label">TRIMAP</span>
+        <canvas id="c-trimap"></canvas>
+      </div>
+      <div class="canvas-wrap">
+        <span class="canvas-label">RESULT</span>
+        <canvas id="c-result"></canvas>
+      </div>
+    </div>
+    <div class="legend" style="margin-top:12px;">
+      <div class="legend-item"><div class="legend-swatch" style="background:#000"></div>subject</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#fff"></div>background</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:#808080"></div>blending</div>
+    </div>
+  </div>
+
+  <!-- STEP 4: Blur controls -->
+  <div class="card">
+    <div class="card-title"><span class="num">04</span> BLUR SETTINGS</div>
+    <div class="slider-row">
+      <label>Background blur</label>
+      <input type="range" min="2" max="40" value="5" step="1" id="sl-blur" oninput="onSlider()">
+      <span class="slider-val" id="lbl-blur">5</span>
+    </div>
+    <div class="slider-row">
+      <label>Blend feather</label>
+      <input type="range" min="0" max="30" value="25" step="1" id="sl-feather" oninput="onSlider()">
+      <span class="slider-val" id="lbl-feather">25</span>
+    </div>
+    <div class="row" style="margin-top:16px;">
+      <button class="btn" id="btn-dl" onclick="downloadResult()" disabled>Download PNG</button>
+      <span id="comp-pill" class="pill wait"><span class="dot"></span>no result yet</span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────
+let model        = null;
+let userImg      = null;
+let trimapData   = null;   // { classes: Int32Array, w: modelW, h: modelH }
+let normMode     = 'div255';
+let alignCorners = true;
+let labelShift   = 0;      // 0 = no shift, 1 = subtract 1 from argmax result
+
+const IMG_SIZE   = 256;    // fallback; overridden by model.inputs[0].shape
+
+// ─── Logging (console only) ───────────────────────────────────
+function log(msg, type='') { console.log(msg); }
+
+function setPill(id, state, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = 'pill ' + state;
+  el.innerHTML = '<span class="dot"></span>' + text;
+}
+
+// ─── Model loading (auto from model.json) ────────────────────
+async function autoLoadModel() {
+  setPill('model-pill', 'busy', 'loading…');
+  try {
+    model = await tf.loadGraphModel('model.json');
+    log('Model loaded OK');
+    setPill('model-pill', 'ok', 'model ready');
+    updatePredictBtn();
+  } catch(e) {
+    log('Model load error: ' + e.message);
+    setPill('model-pill', 'error', 'failed — check console');
+  }
+}
+
+// ─── Image loading ────────────────────────────────────────────
+document.getElementById('img-input').addEventListener('change', e => {
+  if (e.target.files[0]) loadUserImage(e.target.files[0]);
+});
+
+// Drag-and-drop for image
+const imgDrop = document.getElementById('img-drop');
+imgDrop.addEventListener('dragover', e => { e.preventDefault(); imgDrop.classList.add('over'); });
+imgDrop.addEventListener('dragleave', () => imgDrop.classList.remove('over'));
+imgDrop.addEventListener('drop', e => {
+  e.preventDefault(); imgDrop.classList.remove('over');
+  if (e.dataTransfer.files[0]) loadUserImage(e.dataTransfer.files[0]);
+});
+
+function loadUserImage(file) {
+  const url = URL.createObjectURL(file);
+  userImg = new Image();
+  userImg.onload = () => {
+    log('Image loaded: ' + userImg.naturalWidth + '×' + userImg.naturalHeight + ' ' + file.name, 'ok');
+    // Draw on input canvas
+    const c = document.getElementById('c-input');
+    c.width = userImg.naturalWidth; c.height = userImg.naturalHeight;
+    c.getContext('2d').drawImage(userImg, 0, 0);
+    updatePredictBtn();
+  };
+  userImg.src = url;
+}
+
+function updatePredictBtn() {
+  document.getElementById('btn-predict').disabled = !(model && userImg);
+}
+
+// ─── Preprocessing ────────────────────────────────────────────
+function getModelSize() {
+  let shape;
+  if (model.inputs) {
+    shape = model.inputs[0].shape;
+  } else {
+    shape = Object.values(model.signature.inputs)[0].tensorShape.dim.map(d => parseInt(d.size));
+  }
+  const H = (shape[1] && shape[1] > 0) ? shape[1] : IMG_SIZE;
+  const W = (shape[2] && shape[2] > 0) ? shape[2] : IMG_SIZE;
+  return [H, W];
+}
+
+function preprocess(imgEl) {
+  return tf.tidy(() => {
+    const [H, W] = getModelSize();
+    let t = tf.browser.fromPixels(imgEl, 3);
+    t = tf.image.resizeBilinear(t, [H, W], alignCorners);
+    t = t.toFloat();
+
+    switch(normMode) {
+      case 'div255':
+        t = t.div(255.0);
+        break;
+      case 'imagenet':
+        // ImageNet mean=[0.485,0.456,0.406] std=[0.229,0.224,0.225]
+        t = t.div(255.0);
+        const mean = tf.tensor1d([0.485, 0.456, 0.406]);
+        const std  = tf.tensor1d([0.229, 0.224, 0.225]);
+        t = t.sub(mean).div(std);
+        break;
+      case 'neg1to1':
+        t = t.div(127.5).sub(1.0);
+        break;
+      case 'raw':
+        // no normalization
+        break;
+    }
+    return t.expandDims(0);
+  });
+}
+
+// ─── Prediction ───────────────────────────────────────────────
+async function runPrediction() {
+  if (!model || !userImg) return;
+  const btn = document.getElementById('btn-predict');
+  btn.disabled = true;
+  setPill('pred-pill', 'busy', 'predicting…');
+  log('Starting prediction (norm=' + normMode + ', alignCorners=' + alignCorners + ')…');
+
+  await tf.nextFrame();
+
+  try {
+    const inputTensor = preprocess(userImg);
+
+    // Predict
+    const rawResult = model.predict(inputTensor);
+    const outputTensor = Array.isArray(rawResult) ? rawResult[0] : rawResult;
+    log('Output shape: ' + JSON.stringify(outputTensor.shape));
+
+    // Sample raw logits at center pixel for debug
+    const [H, W] = getModelSize();
+    const cx = Math.floor(W / 2), cy = Math.floor(H / 2);
+    try {
+      const centerLogits = await outputTensor.slice([0, cy, cx, 0], [1, 1, 1, -1]).data();
+      log('Logits at center (' + cx + ',' + cy + '): [' + Array.from(centerLogits).map(v => v.toFixed(3)).join(', ') + ']');
+    } catch(e) { /* non-fatal */ }
+
+    // Log per-channel softmax means — tells us which channels are "active"
+    try {
+      const chMeans = await Promise.all([0,1,2].map(c =>
+        outputTensor.slice([0,0,0,c],[1,-1,-1,1]).mean().data()
+      ));
+      log('Channel means → ch0=' + chMeans[0][0].toFixed(4) +
+          '  ch1=' + chMeans[1][0].toFixed(4) +
+          '  ch2=' + chMeans[2][0].toFixed(4));
+    } catch(e) { /* non-fatal */ }
+
+    // Argmax to get class map
+    const classMapTensor = outputTensor.argMax(-1).squeeze();
+    const classMap = await classMapTensor.data();
+    log('Classes found: ' + [...new Set(classMap)].sort().join(', '));
+
+    // Store & render
+    trimapData = { classes: classMap, w: W, h: H };
+    renderTrimap(classMap, W, H);
+
+    // Build alpha map once (expensive), then composite
+    setPill('pred-pill', 'busy', 'building alpha map…');
+    await tf.nextFrame();
+    buildAlphaMap();
+    recomposite();
+
+    // Cleanup
+    inputTensor.dispose();
+    classMapTensor.dispose();
+    if (Array.isArray(rawResult)) rawResult.forEach(t => t.dispose());
+    else rawResult.dispose();
+
+    setPill('pred-pill', 'ok', 'done ✓');
+    log('Prediction complete.', 'ok');
+  } catch(e) {
+    log('Prediction error: ' + e.message, 'err');
+    setPill('pred-pill', 'error', 'error');
+    console.error(e);
+  }
+
+  btn.disabled = false;
+}
+
+// ─── Trimap rendering ─────────────────────────────────────────
+function renderTrimap(classMap, W, H) {
+  const tc = document.getElementById('c-trimap');
+  const { naturalWidth: imgW, naturalHeight: imgH } = userImg;
+  tc.width = imgW; tc.height = imgH;
+  const ctx = tc.getContext('2d');
+
+  // Build at model resolution
+  const small = document.createElement('canvas');
+  small.width = W; small.height = H;
+  const sCtx = small.getContext('2d');
+  const id = sCtx.createImageData(W, H);
+  for (let i = 0; i < classMap.length; i++) {
+    const v = classMap[i] === 0 ? 0 : classMap[i] === 2 ? 128 : 255;
+    const p = i * 4;
+    id.data[p] = id.data[p+1] = id.data[p+2] = v;
+    id.data[p+3] = 255;
+  }
+  sCtx.putImageData(id, 0, 0);
+
+  // Upscale to image resolution
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(small, 0, 0, imgW, imgH);
+}
+
+// ─── Box blur (unused, kept for safety) ──────────────────────
+function boxBlurCanvas(src, radius) { return src; }
+
+// ─── Compositing ─────────────────────────────────────────────
+let cachedAlpha = null;   // Float32Array at full image res, computed once per prediction
+let sliderTimer = null;
+
+function onSlider() {
+  document.getElementById('lbl-blur').textContent    = document.getElementById('sl-blur').value;
+  document.getElementById('lbl-feather').textContent = document.getElementById('sl-feather').value;
+  clearTimeout(sliderTimer);
+  sliderTimer = setTimeout(() => {
+    // Feather change requires rebuilding alpha map; blur change just re-blurs
+    const featherChanged = document.getElementById('sl-feather')._lastVal !==
+                           document.getElementById('sl-feather').value;
+    document.getElementById('sl-feather')._lastVal = document.getElementById('sl-feather').value;
+    if (featherChanged) buildAlphaMap();
+    recomposite();
+  }, 300);
+}
+
+function recomposite() {
+  if (!userImg || !trimapData || !cachedAlpha) return;
+
+  const blurR = parseInt(document.getElementById('sl-blur').value);
+  const W = userImg.naturalWidth, H = userImg.naturalHeight;
+
+  const orig = document.createElement('canvas');
+  orig.width = W; orig.height = H;
+  orig.getContext('2d').drawImage(userImg, 0, 0);
+
+  const out = document.getElementById('c-result');
+  out.width = W; out.height = H;
+  out.getContext('2d').drawImage(applyZoneBlur(orig, cachedAlpha, blurR), 0, 0);
+
+  setPill('comp-pill', 'ok', 'composited ✓');
+  document.getElementById('btn-dl').disabled = false;
+}
+
+// Called once after prediction — expensive distance search happens here
+function buildAlphaMap() {
+  const { classes: classMap, w: modelW, h: modelH } = trimapData;
+  const featherR = parseInt(document.getElementById('sl-feather').value);
+  const W = userImg.naturalWidth, H = userImg.naturalHeight;
+
+  // Work at model resolution (256×256) for the distance search — much faster
+  const rawAlpha = new Float32Array(modelW * modelH);
+  for (let i = 0; i < classMap.length; i++) {
+    rawAlpha[i] = classMap[i] === 0 ? 1.0 : classMap[i] === 1 ? 0.0 : -1.0; // -1 = blending
+  }
+
+  if (featherR > 0) {
+    // Distance transform at model resolution
+    const sr = Math.min(featherR, 40);
+    for (let y = 0; y < modelH; y++) {
+      for (let x = 0; x < modelW; x++) {
+        if (rawAlpha[y * modelW + x] !== -1.0) continue;
+        let minSubj = Infinity, minBg = Infinity;
+        for (let dy = -sr; dy <= sr; dy++) {
+          const ny = y + dy;
+          if (ny < 0 || ny >= modelH) continue;
+          for (let dx = -sr; dx <= sr; dx++) {
+            const nx = x + dx;
+            if (nx < 0 || nx >= modelW) continue;
+            const a = rawAlpha[ny * modelW + nx];
+            if (a === -1.0) continue;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if (a === 1.0 && dist < minSubj) minSubj = dist;
+            if (a === 0.0 && dist < minBg)   minBg   = dist;
+          }
+        }
+        if      (minSubj === Infinity) rawAlpha[y * modelW + x] = 0.0;
+        else if (minBg   === Infinity) rawAlpha[y * modelW + x] = 1.0;
+        else rawAlpha[y * modelW + x] = minBg / (minSubj + minBg);
+      }
+    }
+  } else {
+    // No feather: blending zone = 0.5
+    for (let i = 0; i < rawAlpha.length; i++) {
+      if (rawAlpha[i] === -1.0) rawAlpha[i] = 0.5;
+    }
+  }
+
+  // Upsample alpha map to full image resolution using bilinear interpolation
+  cachedAlpha = new Float32Array(W * H);
+  const scaleX = (modelW - 1) / (W - 1);
+  const scaleY = (modelH - 1) / (H - 1);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const mx = x * scaleX, my = y * scaleY;
+      const x0 = Math.floor(mx), y0 = Math.floor(my);
+      const x1 = Math.min(x0 + 1, modelW - 1), y1 = Math.min(y0 + 1, modelH - 1);
+      const tx = mx - x0, ty = my - y0;
+      cachedAlpha[y * W + x] =
+        rawAlpha[y0 * modelW + x0] * (1-tx) * (1-ty) +
+        rawAlpha[y0 * modelW + x1] *    tx  * (1-ty) +
+        rawAlpha[y1 * modelW + x0] * (1-tx) *    ty  +
+        rawAlpha[y1 * modelW + x1] *    tx  *    ty;
+    }
+  }
+}
+
+// Applies blur using precomputed alpha — blur radius varies smoothly across the blending zone
+function applyZoneBlur(orig, alpha, blurRadius) {
+  const W = orig.width, H = orig.height;
+  const origData = orig.getContext('2d').getImageData(0, 0, W, H).data;
+
+  if (blurRadius < 1) {
+    const out = document.createElement('canvas');
+    out.width = W; out.height = H;
+    out.getContext('2d').drawImage(orig, 0, 0);
+    return out;
+  }
+
+  // Build N blur levels from blurRadius down to 0
+  // More levels = smoother gradient, but more StackBlur passes
+  const LEVELS = 6;
+  const blurLevels = []; // [0] = full blur, [LEVELS-1] = least blur
+  for (let i = 0; i < LEVELS; i++) {
+    const r = Math.round(blurRadius * (1 - i / (LEVELS - 1)));
+    const bc = document.createElement('canvas');
+    bc.width = W; bc.height = H;
+    bc.getContext('2d').drawImage(orig, 0, 0);
+    if (r > 0) StackBlur.canvasRGBA(bc, 0, 0, W, H, r);
+    blurLevels.push(bc.getContext('2d').getImageData(0, 0, W, H).data);
+  }
+
+  // Composite: alpha=0 → blurLevels[0] (full blur), alpha=1 → original (sharp)
+  const out = document.createElement('canvas');
+  out.width = W; out.height = H;
+  const outCtx = out.getContext('2d');
+  const outId = outCtx.createImageData(W, H);
+  const od = outId.data;
+
+  for (let i = 0; i < W * H; i++) {
+    const t = alpha[i]; // 0=bg, 1=subject
+    const p = i * 4;
+
+    if (t >= 1.0) {
+      // Subject: sharp original
+      od[p]   = origData[p];
+      od[p+1] = origData[p+1];
+      od[p+2] = origData[p+2];
+    } else {
+      // Map alpha to blur level:
+      // t=0 → level 0 (full blur), t→1 → level LEVELS-1 (near-zero blur)
+      // Then blend between the two adjacent levels for smoothness
+      const levelF = t * (LEVELS - 1);
+      const l0 = Math.floor(levelF);
+      const l1 = Math.min(l0 + 1, LEVELS - 1);
+      const frac = levelF - l0;
+
+      if (l1 >= LEVELS - 1 && frac > 0) {
+        // Blend between last blur level and sharp original
+        const d0 = blurLevels[l0];
+        od[p]   = d0[p]   * (1 - frac) + origData[p]   * frac;
+        od[p+1] = d0[p+1] * (1 - frac) + origData[p+1] * frac;
+        od[p+2] = d0[p+2] * (1 - frac) + origData[p+2] * frac;
+      } else {
+        const d0 = blurLevels[l0], d1 = blurLevels[l1];
+        od[p]   = d0[p]   * (1 - frac) + d1[p]   * frac;
+        od[p+1] = d0[p+1] * (1 - frac) + d1[p+1] * frac;
+        od[p+2] = d0[p+2] * (1 - frac) + d1[p+2] * frac;
+      }
+    }
+    od[p+3] = 255;
+  }
+  outCtx.putImageData(outId, 0, 0);
+  return out;
+}
+
+// ─── Download ─────────────────────────────────────────────────
+function downloadResult() {
+  const c = document.getElementById('c-result');
+  if (!c.width) return;
+  const a = document.createElement('a');
+  a.href = c.toDataURL('image/png');
+  a.download = 'portrait_blur.png';
+  a.click();
+}
+
+// ─── Debug controls ───────────────────────────────────────────
+function setLabelShift(val) {
+  labelShift = val;
+  const labels = { '-1': 'argmax − 1', '0': '0 (none)', '1': 'argmax + 1' };
+  const el = document.getElementById('shift-current');
+  el.textContent = labels[String(val)];
+  el.style.color = 'var(--accent)';
+  log('Label shift set to: ' + labels[String(val)]);
+  highlightShiftBtn(val);
+  if (trimapData) { log('Re-running with new shift…'); runPrediction(); }
+}
+
+function highlightShiftBtn(val) {
+  [-1, 0, 1].forEach(v => {
+    const id = 'shift-' + (v === -1 ? 'm1' : v === 0 ? '0' : 'p1');
+    document.getElementById(id).style.borderColor = v === val ? 'var(--accent)' : '';
+    document.getElementById(id).style.color       = v === val ? 'var(--accent)' : '';
+  });
+}
+
+function setNorm(mode) {
+  normMode = mode;
+  const labels = { div255: '÷255', imagenet: 'ImageNet μ/σ', raw: 'raw (no norm)', neg1to1: '[-1,1]' };
+  document.getElementById('norm-current').textContent = labels[mode];
+  log('Normalization set to: ' + labels[mode]);
+  ['div255','imagenet','raw','neg1to1'].forEach(m => {
+    document.getElementById('norm-' + m).style.borderColor = m === mode ? 'var(--accent)' : '';
+    document.getElementById('norm-' + m).style.color = m === mode ? 'var(--accent)' : '';
+  });
+}
+
+function setAlignCorners(val) {
+  alignCorners = val;
+  document.getElementById('ac-current').textContent = String(val);
+  log('alignCorners set to: ' + val);
+  document.getElementById('ac-true').style.borderColor  = val  ? 'var(--accent)' : '';
+  document.getElementById('ac-true').style.color        = val  ? 'var(--accent)' : '';
+  document.getElementById('ac-false').style.borderColor = !val ? 'var(--accent)' : '';
+  document.getElementById('ac-false').style.color       = !val ? 'var(--accent)' : '';
+}
+
+// Init
+normMode = 'raw';
+alignCorners = true;
+log('TF.js ' + tf.version.tfjs + ' ready. Backend: ' + tf.getBackend());
+autoLoadModel();
+</script>
+</body>
+</html>
