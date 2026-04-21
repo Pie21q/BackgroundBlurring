@@ -389,6 +389,7 @@
       <strong>Drop your photo here</strong>
       <p>PNG, JPG, WebP</p>
     </div>
+    <div class="file-drop" id="cat" style="margin-top: 2%;"> Give me a random cat :) </div>
   </div>
 
   <!-- STEP 3: Predict -->
@@ -480,6 +481,11 @@ document.getElementById('img-input').addEventListener('change', e => {
   if (e.target.files[0]) loadUserImage(e.target.files[0]);
 });
 
+document.getElementById('cat').addEventListener('click', () => {
+    const url = 'https://cataas.com/cat?' + new Date().getTime();
+    loadImageFromURL(url);
+});
+
 // Drag-and-drop for image
 const imgDrop = document.getElementById('img-drop');
 imgDrop.addEventListener('dragover', e => { e.preventDefault(); imgDrop.classList.add('over'); });
@@ -501,6 +507,20 @@ function loadUserImage(file) {
     updatePredictBtn();
   };
   userImg.src = url;
+
+}
+function loadImageFromURL(url) {
+    userImg = new Image();
+    userImg.crossOrigin = 'anonymous'; // needed for external URLs
+    userImg.onload = () => {
+        log('Image loaded: ' + userImg.naturalWidth + '×' + userImg.naturalHeight, 'ok');
+        const c = document.getElementById('c-input');
+        c.width = userImg.naturalWidth; c.height = userImg.naturalHeight;
+        c.getContext('2d').drawImage(userImg, 0, 0);
+        updatePredictBtn();
+    };
+    userImg.onerror = () => log('Failed to load image from URL', 'error');
+    userImg.src = url;
 }
 
 function updatePredictBtn() {
